@@ -35,14 +35,13 @@ from scipy.special import softmax
 # TensorFlow Includes
 import tensorflow as tf
 tf.set_random_seed(T_G_SEED)
-sess = tf.Session()
 # Keras Imports & Defines 
 import keras
 import keras.applications
 import keras.optimizers
 import keras.losses
 from keras import backend as K
-K.set_session(sess)
+K.set_session(tf.Session())
 from keras.models import Model
 from keras import optimizers
 import keras.layers as kl
@@ -441,16 +440,18 @@ def learn(argv):
     baselr = 0.001
     semilr = 0.0001
  
+    # TF memory leak workaround
     weights = model.get_weights()
     del model
 
     # manual loop over epochs to support very large sets 
     for e in range(0, numepochs):
 
-        print 'clearing session and creating fresh model from weights...'
+        # TF memory leak workaround
+        print 'Clearing TF session and regenerating model from weights...'
+        tf.reset_default_graph()
         tf.keras.backend.clear_session()
-        sess = tf.Session()
-        K.set_session(sess)
+        K.set_session(tf.Session())
         model = createModel(batch, T_G_HEIGHT, T_G_WIDTH, T_G_NUMCHANNELS, numk, outpath, 0)
         model.set_weights(weights)
 
@@ -533,40 +534,36 @@ def learn(argv):
         print '\n\n'
         sys.stdout.flush()
 
-        print 'Garbage Collecting and saving weights to memory ...'
-        #tf.reset_default_graph()
-        weights = model.get_weights()
-        del model
-        gc.collect()
-        
 
-        if (e % T_G_CHECKPOINT == 0):
+        if ((e % T_G_CHECKPOINT == 0) or (e == (numepochs-1))):
+
+            mfile = outpath + '.checkpoint.h5'
+            if (e == (numepochs-1)):
+                mfile = outpath + '.h5'
 
             print "Saving Checkpoint ..."
+
+            # save the color map
             np.savetxt(outpath + '.cmap.txt',cmap)
-            model.save(outpath + '.checkpoint.h5')
+
+            # Save the model and weights
+            model.save(mfile)
+
+            # Due to some remaining Keras bugs around loading custom optimizers
+            # and objectives, we save the model architecture as well
             model_json = model.to_json()
             with open(outpath + '.json', "w") as json_file:
                 json_file.write(model_json)
                 json_file.close()
 
+        # TF memory leak workaround
+        print 'Garbage collecting and saving weights to memory ...'
+        weights = model.get_weights()
+        del model
+        gc.collect()
+    
 
-    print 'Saving model ...'
-
-    # save the color map
-    np.savetxt(outpath + '.cmap.txt',cmap)
-
-    # Save the model and weights
-    model.save(outpath + '.h5')
-
-    # Due to some remaining Keras bugs around loading custom optimizers
-    # and objectives, we save the model architecture as well
-    model_json = model.to_json()
-    with open(outpath + '.json', "w") as json_file:
-        json_file.write(model_json)
-        json_file.close()
-
-    # scoreModel(in_v_i, model, 'debugout')
+    # the end
 
     return
 
