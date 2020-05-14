@@ -11,7 +11,7 @@ T_G_SEED = 1337
 # How many images to load from disk, and how many
 # before a print command to report progress
 T_G_CHUNKSIZE = 1000
-T_G_REPORTSIZE = 50
+T_G_REPORTSIZE = 20
 
 # when to save checkpoints (only one always overwritten)
 T_G_CHECKPOINT = 10
@@ -21,6 +21,7 @@ USAGE_LEARN = 'Usage: \n\t -learn <Train Images (TXT)> <Train Masks (TXT)> <Val 
 # Misc. Necessities
 import sys
 import os
+import gc
 import ssl # these two lines solved issues loading pretrained model
 ssl._create_default_https_context = ssl._create_unverified_context
 import numpy as np
@@ -34,13 +35,14 @@ from scipy.special import softmax
 # TensorFlow Includes
 import tensorflow as tf
 tf.set_random_seed(T_G_SEED)
-
+sess = tf.Session()
 # Keras Imports & Defines 
 import keras
 import keras.applications
 import keras.optimizers
 import keras.losses
 from keras import backend as K
+K.set_session(sess)
 from keras.models import Model
 from keras import optimizers
 import keras.layers as kl
@@ -203,11 +205,12 @@ def createDataGen(X, Y, b, cmap):
 
 
 
-def createModel(batch_size, height, width, channel, classes, namepref='model'):
+def createModel(batch_size, height, width, channel, classes, namepref='model', summary=1):
 
     base_model = seg_hrnet(batch_size, height, width, channel, classes, namepref)
 
-    print base_model.summary()
+    if (summary == 1):
+        print base_model.summary()
 
     base_model.compile(optimizer=keras.optimizers.Adam(), loss=soft_jaccard_loss, metrics=[jaccard_loss_b, keras.losses.binary_crossentropy, joint_loss, keras.losses.mean_squared_error, soft_jaccard_loss, jaccard_loss])
 
@@ -395,6 +398,7 @@ def learn(argv):
     in_c_i = argv[8]
 
     sys.stdout = open(outpath + '_train_output.log', 'w')
+    sys.stderr = open(outpath + '_train_errors.log', 'w')
     print 'Command line: ',
     for a in argv:
         print a+' ',
@@ -437,8 +441,18 @@ def learn(argv):
     baselr = 0.001
     semilr = 0.0001
  
+    weights = model.get_weights()
+    del model
+
     # manual loop over epochs to support very large sets 
     for e in range(0, numepochs):
+
+        print 'clearing session and creating fresh model from weights...'
+        tf.keras.backend.clear_session()
+        sess = tf.Session()
+        K.set_session(sess)
+        model = createModel(batch, T_G_HEIGHT, T_G_WIDTH, T_G_NUMCHANNELS, numk, outpath, 0)
+        model.set_weights(weights)
 
         # training loop
         for t in range(0, total_t_ch):
@@ -518,6 +532,12 @@ def learn(argv):
         print 'Validation Results: ' + str(val_res) + '\n'
         print '\n\n'
         sys.stdout.flush()
+
+        print 'Garbage Collecting and saving weights to memory ...'
+        #tf.reset_default_graph()
+        weights = model.get_weights()
+        del model
+        gc.collect()
         
 
         if (e % T_G_CHECKPOINT == 0):
