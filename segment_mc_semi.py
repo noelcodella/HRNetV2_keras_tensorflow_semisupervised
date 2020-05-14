@@ -433,6 +433,9 @@ def learn(argv):
     t_imloaded = 0
     v_imloaded = 0
     c_imloaded = 0
+
+    baselr = 0.001
+    semilr = 0.0001
  
     # manual loop over epochs to support very large sets 
     for e in range(0, numepochs):
@@ -451,9 +454,10 @@ def learn(argv):
                 masks_t = colorsToClass(colors_t, cmap) 
                 t_imloaded = 1
 
-            print 'Starting to fit ...'
+            print 'Starting to fit with lr = ' + str(baselr) + ' ...'
 
             # This method uses data augmentation
+            model.compile(optimizer=keras.optimizers.Adam(lr=baselr), loss=soft_jaccard_loss, metrics=[jaccard_loss_b, keras.losses.binary_crossentropy, joint_loss, keras.losses.mean_squared_error, soft_jaccard_loss, jaccard_loss])
             model.fit_generator(generator=createDataGen(images_t,masks_t,batch,cmap), steps_per_epoch=len(images_t) / batch, epochs=1, shuffle=False, use_multiprocessing=True)
         
         # Consistency Loss
@@ -476,9 +480,10 @@ def learn(argv):
             # masks_c = softmax(masks_c, axis=3)
             masks_c = np.power(masks_c, 2.0)
 
-            print 'Fitting ...'
+            print 'Fitting with lr = ' + str(semilr) + ' ...'
             sys.stdout.flush()
             # Data Generator will equally perturb images as well as network predictions
+            model.compile(optimizer=keras.optimizers.Adam(lr=semilr), loss=soft_jaccard_loss, metrics=[jaccard_loss_b, keras.losses.binary_crossentropy, joint_loss, keras.losses.mean_squared_error, soft_jaccard_loss, jaccard_loss])
             model.fit_generator(generator=createDataGen(images_c,masks_c,batch,cmap), steps_per_epoch=len(images_c) / batch, epochs=1, shuffle=False, use_multiprocessing=True)
         
 
@@ -488,7 +493,7 @@ def learn(argv):
         total_w = 0.0
         for v in range(0, total_v_ch):
 
-            print 'Epoch ' + str(e) + ': val chunk ' + str(v+1) + '/ ' + str(total_v_ch) + ' ...'
+            print '\nEpoch ' + str(e) + ': val chunk ' + str(v+1) + '/ ' + str(total_v_ch) + ' ...'
 
             if ( v_imloaded == 0 or total_v_ch > 1 ):
                 print 'Loading validation image lists ...'
@@ -509,7 +514,11 @@ def learn(argv):
 
         val_res = [x / total_w for x in val_res]
 
-        print 'Validation Results: ' + str(val_res)
+        print '\n\n'
+        print 'Validation Results: ' + str(val_res) + '\n'
+        print '\n\n'
+        sys.stdout.flush()
+        
 
         if (e % T_G_CHECKPOINT == 0):
 
